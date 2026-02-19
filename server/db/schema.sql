@@ -1,0 +1,78 @@
+-- Kiaros 2.0 Database Schema
+-- Run once on first start via migrations in client.js
+
+CREATE TABLE IF NOT EXISTS credentials (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  key_encrypted TEXT NOT NULL,   -- AES-256-GCM encrypted blob
+  model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+  monthly_budget_cents INTEGER NOT NULL DEFAULT 0,
+  current_spend_cents INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS tool_registry (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  required_scopes TEXT NOT NULL,   -- JSON array
+  risk_level TEXT NOT NULL,        -- derived from scopes
+  reversible INTEGER NOT NULL DEFAULT 0,
+  sandboxed INTEGER NOT NULL DEFAULT 1,
+  timeout_ms INTEGER NOT NULL DEFAULT 10000,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  mcp_config TEXT,                 -- JSON: {command, args, env}
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS approved_scopes (
+  tool_id TEXT NOT NULL REFERENCES tool_registry(id) ON DELETE CASCADE,
+  scopes TEXT NOT NULL,            -- JSON array of approved scopes
+  confirm_each_use INTEGER DEFAULT 0,
+  approved_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (tool_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  tool_id TEXT,
+  tool_name TEXT,
+  input TEXT,                      -- JSON
+  output TEXT,                     -- JSON
+  approved_by TEXT,                -- 'auto' | 'user' | 'system'
+  duration_ms INTEGER,
+  token_cost INTEGER,              -- Cost in millicents
+  reversible INTEGER DEFAULT 0,
+  reversed INTEGER DEFAULT 0,
+  undo_data TEXT,                  -- JSON: data needed to reverse action
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS audit_log_session ON audit_log(session_id);
+CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS working_memory (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  source TEXT DEFAULT 'user_stated',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_active_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id, created_at);
