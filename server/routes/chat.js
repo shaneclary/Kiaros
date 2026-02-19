@@ -7,7 +7,6 @@ const {
 } = require('../memory/session')
 const { buildMemoryContext } = require('../memory/working')
 const { getDecryptedKey, getActiveCredentialId, recordSpend, listCredentials } = require('../credentials/manager')
-const { getServerSecret } = require('./credentials')
 const { streamChat } = require('../models/anthropic')
 const { streamChat: ollamaStreamChat } = require('../models/ollama')
 const config = require('../config')
@@ -111,10 +110,10 @@ Security and transparency are paramount. Always explain what you're doing before
         return res.end()
       }
 
-      const serverSecret = getServerSecret()
       let apiKey
       try {
-        apiKey = getDecryptedKey(activeCredId, serverSecret)
+        // req.encKey is the passphrase-derived in-memory AES key — NEVER log it
+        apiKey = getDecryptedKey(activeCredId, req.encKey)
       } catch (err) {
         send('error', { error: 'Failed to retrieve API key. Please re-add it in Settings.' })
         return res.end()

@@ -5,7 +5,7 @@ const {
   listTools, getTool, approveScopes, revokeApproval,
   updateTool, removeTool, SCOPES
 } = require('../tools/registry')
-const { installMcpTool } = require('../tools/mcp-runner')
+const { discoverAndRegister } = require('../tools/mcp-discovery')
 const { resolveInterrupt, getPendingInterrupts } = require('../orchestration/interrupt-gate')
 
 router.use(requireAuth)
@@ -46,13 +46,15 @@ router.delete('/:id/approve', (req, res) => {
   }
 })
 
-// POST /api/tools/install — Install new MCP tool
+// POST /api/tools/install — Install new MCP tool via discovery
 router.post('/install', async (req, res) => {
   try {
-    const { command, args, name, description, requiredScopes } = req.body
+    const { command, args, displayName, requiredScopes } = req.body
     if (!command) return res.status(400).json({ error: 'command is required' })
 
-    const ids = await installMcpTool({ command, args, name, description, requiredScopes })
+    // Discovery spawns the MCP server briefly to enumerate its tools,
+    // then registers each one in the tool_registry table.
+    const ids = await discoverAndRegister({ command, args, displayName, requiredScopes })
     res.json({ ok: true, installedIds: ids, tools: listTools() })
   } catch (err) {
     res.status(400).json({ error: err.message })

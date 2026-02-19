@@ -3,25 +3,24 @@ const router = express.Router()
 const { requireAuth } = require('../auth/passphrase')
 const {
   addCredential, listCredentials, getCredential,
-  deleteCredential, updateCredential, getDecryptedKey, getActiveCredentialId
+  deleteCredential, updateCredential, getDecryptedKey
 } = require('../credentials/manager')
 const { testApiKey } = require('../models/anthropic')
-const config = require('../config')
 
-// All credential routes require auth
+// All credential routes require auth. requireAuth sets req.encKey (in-memory
+// passphrase-derived key — NEVER log or forward to clients).
 router.use(requireAuth)
 
-// GET /api/credentials
+// GET /api/credentials — list with masked keys
 router.get('/', (req, res) => {
   try {
-    const creds = listCredentials()
-    res.json(creds)
+    res.json(listCredentials())
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// POST /api/credentials
+// POST /api/credentials — add new, encrypted with session encKey
 router.post('/', (req, res) => {
   try {
     const { label, apiKey, model, monthlyBudgetCents } = req.body
@@ -29,31 +28,32 @@ router.post('/', (req, res) => {
     if (!apiKey) return res.status(400).json({ error: 'apiKey is required' })
     if (!apiKey.startsWith('sk-')) return res.status(400).json({ error: 'Invalid API key format' })
 
-    // We need the passphrase to encrypt — store it from login
-    // For simplicity in single-user mode, use a derived key from the server secret
-    const serverSecret = getServerSecret()
-
-    const cred = addCredential({ label, apiKey, model, monthlyBudgetCents }, serverSecret)
+    const cred = addCredential({ label, apiKey, model, monthlyBudgetCents }, req.encKey)
     res.status(201).json(cred)
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
 })
 
-// POST /api/credentials/:id/test — Validate API key
+// POST /api/credentials/:id/test — decrypt and ping Anthropic to validate
 router.post('/:id/test', async (req, res) => {
+  let apiKey
   try {
-    const serverSecret = getServerSecret()
-    const apiKey = getDecryptedKey(req.params.id, serverSecret)
-    // SECURITY: never log apiKey
+    apiKey = getDecryptedKey(req.params.id, req.encKey)
+    // SECURITY: apiKey must never be logged or sent in responses
     const result = await testApiKey(apiKey)
     res.json(result)
   } catch (err) {
-    res.status(400).json({ error: err.message })
+    // Sanitize error: ensure API key doesn't appear in message
+    const safeMsg = err.message.replace(/sk-ant-[^\s]*/g, '***')
+    res.status(400).json({ error: safeMsg })
+  } finally {
+    // Help GC clear the plaintext key sooner
+    apiKey = null
   }
 })
 
-// PUT /api/credentials/:id
+// PUT /api/credentials/:id — update metadata (not the key itself)
 router.put('/:id', (req, res) => {
   try {
     const { label, model, monthlyBudgetCents } = req.body
@@ -74,21 +74,4 @@ router.delete('/:id', (req, res) => {
   }
 })
 
-/**
- * Get server encryption secret.
- * In production this should be derived from the user's passphrase,
- * but for single-user simplicity we use a per-installation secret stored in config.
- */
-function getServerSecret() {
-  let secret = config.get('serverSecret')
-  if (!secret) {
-    const crypto = require('crypto')
-    secret = crypto.randomBytes(32).toString('hex')
-    config.set('serverSecret', secret)
-  }
-  return secret
-}
-
-// Export for use in chat route
 module.exports = router
-module.exports.getServerSecret = getServerSecret

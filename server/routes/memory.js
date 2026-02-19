@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { requireAuth } = require('../auth/passphrase')
 const { getAllMemory, getMemory, setMemory, deleteMemory } = require('../memory/working')
+const { searchArchive, isVectorSearchAvailable } = require('../memory/archive')
 
 router.use(requireAuth)
 
@@ -38,9 +39,29 @@ router.delete('/working/:key', (req, res) => {
   }
 })
 
-// POST /api/memory/search — Semantic search (Phase 6 placeholder)
+// GET /api/memory/archive/status — Check if vector search is available
+router.get('/archive/status', (req, res) => {
+  res.json({ vectorSearch: isVectorSearchAvailable() })
+})
+
+// POST /api/memory/search — Keyword or vector search over archive
 router.post('/search', (req, res) => {
-  res.status(501).json({ error: 'Semantic search not yet implemented (Phase 6)' })
+  try {
+    const { query, limit } = req.body
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'query is required' })
+    }
+    if (query.length > 1000) {
+      return res.status(400).json({ error: 'query too long (max 1000 chars)' })
+    }
+    const results = searchArchive({ query, limit: Math.min(limit || 10, 50) })
+    res.json({
+      results,
+      mode: isVectorSearchAvailable() ? 'vector' : 'keyword'
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 module.exports = router

@@ -1,28 +1,26 @@
 const crypto = require('crypto')
 const { getDb } = require('../db/client')
 
-// Derive a 256-bit key from passphrase using PBKDF2
-function deriveKey(passphrase, salt) {
-  return crypto.pbkdf2Sync(passphrase, salt, 100000, 32, 'sha256')
-}
-
 /**
- * Encrypt an API key with AES-256-GCM
- * Key is derived from user passphrase — never stored directly
- * @param {string} apiKey
- * @param {string} passphrase
- * @returns {string} JSON blob suitable for storage
+ * Encrypt an API key with AES-256-GCM.
+ *
+ * The encryption key (encKey) is the passphrase-derived Buffer stored in the
+ * user's session (derived via PBKDF2 at login time — see auth/passphrase.js).
+ * We use a fresh random 12-byte IV per credential; no per-credential KDF needed
+ * since the session key is already properly derived.
+ *
+ * @param {string} apiKey      - plaintext Anthropic API key
+ * @param {Buffer} encKey      - 32-byte session encryption key (NEVER log)
+ * @returns {string} JSON blob suitable for storage in SQLite
  */
-function encryptKey(apiKey, passphrase) {
-  const salt = crypto.randomBytes(16)
-  const key = deriveKey(passphrase, salt)
+function encryptKey(apiKey, encKey) {
   const iv = crypto.randomBytes(12)
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+  const cipher = crypto.createCipheriv('aes-256-gcm', encKey, iv)
   const encrypted = Buffer.concat([cipher.update(apiKey, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
 
   return JSON.stringify({
-    salt: salt.toString('hex'),
+    v: 2,  // schema version — v1 used per-credential PBKDF2 (retired)
     iv: iv.toString('hex'),
     tag: tag.toString('hex'),
     data: encrypted.toString('hex')
@@ -30,17 +28,32 @@ function encryptKey(apiKey, passphrase) {
 }
 
 /**
- * Decrypt an API key
- * @param {string} encryptedBlob - JSON string from storage
- * @param {string} passphrase
+ * Decrypt an API key.
+ *
+ * @param {string} encryptedBlob - JSON blob from storage
+ * @param {Buffer} encKey        - 32-byte session encryption key (NEVER log)
  * @returns {string} plaintext API key
  */
-function decryptKey(encryptedBlob, passphrase) {
-  const { salt, iv, tag, data } = JSON.parse(encryptedBlob)
-  const key = deriveKey(passphrase, Buffer.from(salt, 'hex'))
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'))
-  decipher.setAuthTag(Buffer.from(tag, 'hex'))
-  return Buffer.concat([decipher.update(Buffer.from(data, 'hex')), decipher.final()]).toString('utf8')
+function decryptKey(encryptedBlob, encKey) {
+  const blob = JSON.parse(encryptedBlob)
+
+  if (blob.v !== 2) {
+    throw new Error(
+      'Credential was encrypted with an older format. ' +
+      'Please delete and re-add this API key.'
+    )
+  }
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    encKey,
+    Buffer.from(blob.iv, 'hex')
+  )
+  decipher.setAuthTag(Buffer.from(blob.tag, 'hex'))
+  return Buffer.concat([
+    decipher.update(Buffer.from(blob.data, 'hex')),
+    decipher.final()
+  ]).toString('utf8')
 }
 
 /**
@@ -56,13 +69,13 @@ function maskKey(apiKey) {
 /**
  * Add a new credential
  * @param {{ label: string, apiKey: string, model?: string, monthlyBudgetCents?: number }} opts
- * @param {string} passphrase - to encrypt the key
+ * @param {Buffer} encKey - 32-byte session encryption key from req.encKey (NEVER log)
  * @returns {object} created credential (with masked key)
  */
-function addCredential({ label, apiKey, model, monthlyBudgetCents }, passphrase) {
+function addCredential({ label, apiKey, model, monthlyBudgetCents }, encKey) {
   const db = getDb()
   const id = crypto.randomUUID()
-  const encrypted = encryptKey(apiKey, passphrase)
+  const encrypted = encryptKey(apiKey, encKey)
 
   db.prepare(`
     INSERT INTO credentials (id, label, key_encrypted, model, monthly_budget_cents)
@@ -79,7 +92,7 @@ function addCredential({ label, apiKey, model, monthlyBudgetCents }, passphrase)
 }
 
 /**
- * Get single credential (masked)
+ * Get single credential (masked key — never decrypts)
  */
 function getCredential(id) {
   const db = getDb()
@@ -88,7 +101,7 @@ function getCredential(id) {
   return {
     id: cred.id,
     label: cred.label,
-    keyMasked: maskKey(decryptKeyById(id, null) || 'sk-ant-api'),
+    keyMasked: 'sk-ant-api...',
     model: cred.model,
     monthlyBudgetCents: cred.monthly_budget_cents,
     currentSpendCents: cred.current_spend_cents,
@@ -116,27 +129,17 @@ function listCredentials() {
 }
 
 /**
- * Decrypt a credential's API key for internal use only
- * NEVER expose this value to clients
- * @param {string} id - credential id
- * @param {string} passphrase
+ * Decrypt a credential's API key for internal use ONLY.
+ * NEVER expose the returned value to clients or logs.
+ * @param {string} id     - credential id
+ * @param {Buffer} encKey - 32-byte session encryption key from req.encKey
  * @returns {string} plaintext API key
  */
-function getDecryptedKey(id, passphrase) {
+function getDecryptedKey(id, encKey) {
   const db = getDb()
   const cred = db.prepare('SELECT key_encrypted FROM credentials WHERE id = ? AND is_active = 1').get(id)
   if (!cred) throw new Error('Credential not found or disabled')
-  return decryptKey(cred.key_encrypted, passphrase)
-}
-
-// Internal: try to decrypt without passphrase for masking display (will fail, that's ok)
-function decryptKeyById(id, passphrase) {
-  try {
-    if (!passphrase) return null
-    return getDecryptedKey(id, passphrase)
-  } catch {
-    return null
-  }
+  return decryptKey(cred.key_encrypted, encKey)
 }
 
 /**
