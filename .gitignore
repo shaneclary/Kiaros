@@ -1,5 +1,7 @@
 # Runtime data — never commit
 kiaros.db
+kiaros.db-shm
+kiaros.db-wal
 kiaros.config.json
 notes/
 
