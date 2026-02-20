@@ -1,7 +1,8 @@
 const fs = require('fs')
 const path = require('path')
+const xdg = require('./xdg')
 
-const CONFIG_PATH = path.join(__dirname, '../kiaros.config.json')
+const CONFIG_PATH = xdg.configFile
 
 let config = null
 

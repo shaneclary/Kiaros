@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Kiaros
+GenericName=AI Assistant
+Comment=Self-hosted personal AI executive assistant powered by Claude
+Exec=xdg-open http://localhost:3333
+Icon=kiaros
+Terminal=false
+StartupNotify=false
+Categories=Office;Utility;Network;
+Keywords=AI;Claude;Assistant;Productivity;Notes;Memory;

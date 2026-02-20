@@ -1,0 +1,49 @@
+# Kiaros Personal AI Assistant — systemd user service
+#
+# Managed by install.sh. Do not edit by hand — re-run install.sh to update.
+# ExecStart is stamped in by install.sh with the real install path.
+#
+# Useful commands:
+#   systemctl --user start   kiaros
+#   systemctl --user stop    kiaros
+#   systemctl --user restart kiaros
+#   systemctl --user status  kiaros
+#   journalctl --user -u kiaros -f
+
+[Unit]
+Description=Kiaros Personal AI Assistant
+Documentation=https://github.com/shaneclary/Kiaros
+# Start after the network is up and the desktop session is available.
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# %%KIAROS_EXEC%% is replaced by install.sh with the absolute path to node + index.js
+ExecStart=%%KIAROS_EXEC%%
+
+# Restart on unexpected exit; don't hammer on startup errors
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Let systemd capture stdout/stderr → journalctl --user -u kiaros
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kiaros
+
+# Inherit DISPLAY, WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS from the user
+# session environment so notify-send can reach the desktop.
+PassEnvironment=DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS \
+                XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
+
+Environment=NODE_ENV=production
+
+# Light sandboxing — safe for a local-only service that needs fs access
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

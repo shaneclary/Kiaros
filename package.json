@@ -7,7 +7,13 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "build": "cd client && npm run build",
-    "setup": "npm install && cd client && npm install"
+    "setup": "npm install && cd client && npm install",
+    "install:linux": "bash install.sh",
+    "service:start": "systemctl --user start kiaros",
+    "service:stop": "systemctl --user stop kiaros",
+    "service:restart": "systemctl --user restart kiaros",
+    "service:status": "systemctl --user status kiaros",
+    "service:logs": "journalctl --user -u kiaros -f"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",

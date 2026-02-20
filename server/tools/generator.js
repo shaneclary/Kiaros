@@ -20,8 +20,9 @@ const fs   = require('fs')
 const Anthropic = require('@anthropic-ai/sdk')
 const { registerTool } = require('./registry')
 const { getDb } = require('../db/client')
+const xdg = require('../xdg')
 
-const GENERATED_DIR = path.join(__dirname, 'generated')
+const GENERATED_DIR = xdg.generatedDir
 
 // Ensure generated_handler_path column exists (idempotent migration)
 try {

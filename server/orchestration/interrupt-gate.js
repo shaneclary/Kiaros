@@ -1,5 +1,6 @@
 const { getTool, getRiskLevel } = require('../tools/registry')
 const config = require('../config')
+const { notifyToolApproval } = require('./notify')
 
 /**
  * Pending interrupt requests: id -> { resolve, reject, action }
@@ -45,7 +46,7 @@ function requestApproval(interruptId, action) {
       resolve(false) // Auto-block on timeout
     }, 5 * 60 * 1000)
 
-    pendingInterrupts.set(interruptId, {
+    const entry = {
       resolve: (approved) => {
         clearTimeout(timeout)
         pendingInterrupts.delete(interruptId)
@@ -58,6 +59,23 @@ function requestApproval(interruptId, action) {
       },
       action,
       createdAt: Date.now()
+    }
+    pendingInterrupts.set(interruptId, entry)
+
+    // Fire a desktop notification so the user can approve without the browser.
+    // This is best-effort — if notify-send is absent or the user ignores it,
+    // the web UI remains the primary approval path.
+    notifyToolApproval({
+      toolName:  action.toolName,
+      input:     action.input,
+      riskLevel: action.riskLevel,
+    }).then(actionId => {
+      // Only act if the interrupt is still pending (not yet resolved by web UI)
+      if (actionId !== null && pendingInterrupts.has(interruptId)) {
+        pendingInterrupts.get(interruptId).resolve(actionId === 'approve')
+      }
+    }).catch(() => {
+      // Notification failure is silent — web UI handles it
     })
   })
 }

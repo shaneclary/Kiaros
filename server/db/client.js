@@ -1,8 +1,9 @@
 const Database = require('better-sqlite3')
 const path = require('path')
 const fs = require('fs')
+const xdg = require('../xdg')
 
-const DB_PATH = path.join(__dirname, '../../kiaros.db')
+const DB_PATH     = xdg.dbFile
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql')
 
 let db = null
