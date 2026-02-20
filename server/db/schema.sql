@@ -76,3 +76,19 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS scheduled_jobs (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  prompt              TEXT NOT NULL,            -- the task prompt sent to Claude
+  schedule            TEXT NOT NULL,            -- cron expression or @shorthand
+  credential_id       TEXT,                     -- null = use active credential
+  model               TEXT,                     -- null = credential default
+  enabled             INTEGER NOT NULL DEFAULT 1,
+  last_run_at         TEXT,
+  next_run_at         TEXT,
+  last_result_summary TEXT,                     -- short summary of last result
+  last_error          TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS scheduled_jobs_next ON scheduled_jobs(next_run_at, enabled);

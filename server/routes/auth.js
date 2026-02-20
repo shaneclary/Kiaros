@@ -1,7 +1,8 @@
 const express = require('express')
 const router = express.Router()
-const { setPassphrase, hasPassphrase, login, logout } = require('../auth/passphrase')
+const { setPassphrase, hasPassphrase, login, logout, validateSession } = require('../auth/passphrase')
 const config = require('../config')
+const scheduler = require('../scheduler/manager')
 
 // POST /api/auth/setup — First-run passphrase setup
 router.post('/setup', async (req, res) => {
@@ -24,6 +25,16 @@ router.post('/login', async (req, res) => {
     const { passphrase } = req.body
     if (!passphrase) return res.status(400).json({ error: 'passphrase is required' })
     const token = await login(passphrase)
+
+    // Unlock the scheduler so recurring jobs can decrypt API keys.
+    // The encKey is the passphrase-derived AES key — NEVER logged.
+    try {
+      const { encKey } = validateSession(token)
+      scheduler.unlockWithEncKey(encKey)
+    } catch {
+      // Unlock failure is non-fatal — chat still works, jobs just won't run
+    }
+
     res.json({ token })
   } catch (err) {
     res.status(401).json({ error: err.message })
@@ -34,6 +45,7 @@ router.post('/login', async (req, res) => {
 router.post('/logout', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (token) logout(token)
+  scheduler.lock()
   res.json({ ok: true })
 })
 
