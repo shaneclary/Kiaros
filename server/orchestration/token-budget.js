@@ -4,10 +4,11 @@
  * Provides:
  *  - Local token estimation (4 chars/token heuristic — good enough for budgeting)
  *  - Monthly spend guard: warns before a request would exceed the budget ceiling
- *  - Context compression: when the conversation grows large, fold the oldest
- *    messages into a single summary stub so the model's context window stays safe
- *
- * None of these functions make external API calls; all logic is local.
+ *  - Context compression (two modes):
+ *      compressContextWithAI  — sends the old messages to Claude for a real semantic
+ *                               summary (async, requires apiKey + model)
+ *      compressContext        — local string truncation fallback (sync, zero cost)
+ *      ensureContextFits      — calls AI compression when possible, else local
  */
 
 const { getDb } = require('../db/client')
@@ -135,20 +136,96 @@ function compressContext(messages, keepLast = COMPRESS_KEEP_LAST) {
 }
 
 /**
- * Return the messages array, compressing it first if it is too large.
- * Call this before each loop iteration in the agentic loop.
+ * Compress a messages array using Claude for a real semantic summary.
  *
- * @param {Array} messages
- * @returns {{ messages: Array, wasCompressed: boolean }}
+ * The messages to be folded are sent to Claude with a summarisation prompt.
+ * The result is a single user-turn stub that the model will read as prior
+ * context — far more useful than simple string truncation.
+ *
+ * Falls back to local compressContext if the API call fails.
+ *
+ * @param {Array}  messages   — full Anthropic messages array
+ * @param {{
+ *   apiKey: string,
+ *   model?: string,
+ *   keepLast?: number
+ * }} opts
+ * @returns {Promise<{ messages: Array, wasCompressed: boolean, droppedCount: number, method: string }>}
  */
-function ensureContextFits(messages) {
+async function compressContextWithAI(messages, { apiKey, model, keepLast = COMPRESS_KEEP_LAST }) {
+  if (messages.length <= keepLast) {
+    return { messages, wasCompressed: false, droppedCount: 0, method: 'none' }
+  }
+
+  const toFold = messages.slice(0, -keepLast)
+  const recent = messages.slice(-keepLast)
+
+  // Build a plain-text transcript of the messages to fold
+  const transcript = toFold.map(m => {
+    const text = typeof m.content === 'string'
+      ? m.content
+      : (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n')
+    return `[${m.role.toUpperCase()}]: ${text.substring(0, 800)}`
+  }).join('\n\n')
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk')
+    const client = new Anthropic({ apiKey })
+
+    const response = await client.messages.create({
+      model:      model || 'claude-haiku-4-20250514',
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content:
+          `Summarise the following conversation excerpt in ≤ 400 words. ` +
+          `Preserve key decisions, facts, preferences, and any unresolved questions. ` +
+          `Write in third person. Output only the summary, no preamble.\n\n` +
+          transcript
+      }]
+    })
+
+    const summary = response.content.find(b => b.type === 'text')?.text || transcript.substring(0, 1000)
+    const stub    = `[Conversation summary — ${toFold.length} earlier messages]\n${summary}`
+
+    console.log(`[token-budget] AI compression: folded ${toFold.length} messages into ${summary.length}-char summary`)
+
+    return {
+      messages:     [{ role: 'user', content: stub }, ...recent],
+      wasCompressed: true,
+      droppedCount:  toFold.length,
+      method:       'ai'
+    }
+  } catch (err) {
+    console.warn(`[token-budget] AI compression failed (${err.message}), using local fallback`)
+    const local = compressContext(messages, keepLast)
+    return { ...local, method: 'local-fallback' }
+  }
+}
+
+/**
+ * Return the messages array, compressing it first if it is too large.
+ *
+ * Pass opts.apiKey + opts.model to use AI summarisation;
+ * omit them for the free local truncation fallback.
+ *
+ * @param {Array}   messages
+ * @param {{ apiKey?: string, model?: string }} [opts]
+ * @returns {Promise<{ messages: Array, wasCompressed: boolean }>}
+ */
+async function ensureContextFits(messages, opts = {}) {
   const tokens = estimateContextTokens(messages)
   if (tokens < COMPRESS_ABOVE_TOKENS) {
     return { messages, wasCompressed: false }
   }
+
+  if (opts.apiKey) {
+    return compressContextWithAI(messages, opts)
+  }
+
   const { messages: compressed, compressed: wasCompressed, droppedCount } = compressContext(messages)
   if (wasCompressed) {
-    console.log(`[token-budget] Context compressed: dropped ${droppedCount} messages (was ~${tokens} tokens)`)
+    console.log(`[token-budget] Local compression: dropped ${droppedCount} messages (was ~${tokens} tokens)`)
   }
   return { messages: compressed, wasCompressed }
 }
@@ -159,6 +236,7 @@ module.exports = {
   estimateCostMillicents,
   checkMonthlyBudget,
   compressContext,
+  compressContextWithAI,
   ensureContextFits,
   COMPRESS_ABOVE_TOKENS,
 }

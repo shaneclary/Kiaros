@@ -46,6 +46,33 @@ const builtins = [
     reversible: true,
     sandboxed: true,
     timeoutMs: 5000
+  },
+  {
+    id: 'shell-exec',
+    name: 'Shell Command',
+    description: 'Execute a shell command and return its stdout/stderr output',
+    requiredScopes: ['shell:exec'],
+    reversible: false,
+    sandboxed: false,
+    timeoutMs: 30000
+  },
+  {
+    id: 'clipboard-read',
+    name: 'Read Clipboard',
+    description: 'Read the current text content of the system clipboard (Wayland/X11)',
+    requiredScopes: ['fs:read'],
+    reversible: false,
+    sandboxed: true,
+    timeoutMs: 8000
+  },
+  {
+    id: 'clipboard-write',
+    name: 'Write Clipboard',
+    description: 'Overwrite the system clipboard with the provided text (Wayland/X11)',
+    requiredScopes: ['fs:write'],
+    reversible: false,
+    sandboxed: true,
+    timeoutMs: 8000
   }
 ]
 

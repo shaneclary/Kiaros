@@ -6,10 +6,12 @@ const { shouldInterrupt, requestApproval } = require('./interrupt-gate')
 const { logAction, updateAction } = require('../audit/logger')
 
 // Import builtin tool handlers
-const { readFile } = require('../tools/builtin/file-reader')
-const { writeFile } = require('../tools/builtin/file-writer')
-const { webFetch } = require('../tools/builtin/web-fetch')
-const { writeNote } = require('../tools/builtin/note-taker')
+const { readFile }                      = require('../tools/builtin/file-reader')
+const { writeFile }                     = require('../tools/builtin/file-writer')
+const { webFetch }                      = require('../tools/builtin/web-fetch')
+const { writeNote }                     = require('../tools/builtin/note-taker')
+const { shellExec }                     = require('../tools/builtin/shell-exec')
+const { clipboardRead, clipboardWrite } = require('../tools/builtin/clipboard')
 
 // MCP runner — loaded lazily to avoid circular deps
 let mcpRunner = null
@@ -27,10 +29,13 @@ function loadGeneratedHandler(handlerPath) {
 
 // Built-in tool handlers map
 const BUILTIN_HANDLERS = {
-  'file-reader': readFile,
-  'file-writer': writeFile,
-  'web-fetch':   webFetch,
-  'note-taker':  writeNote,
+  'file-reader':     readFile,
+  'file-writer':     writeFile,
+  'web-fetch':       webFetch,
+  'note-taker':      writeNote,
+  'shell-exec':      shellExec,
+  'clipboard-read':  clipboardRead,
+  'clipboard-write': clipboardWrite,
 }
 
 /**
