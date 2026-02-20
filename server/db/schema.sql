@@ -88,7 +88,10 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
   last_run_at         TEXT,
   next_run_at         TEXT,
   last_result_summary TEXT,                     -- short summary of last result
+  webhook_token       TEXT,                     -- 64-char hex secret for HTTP triggers
   last_error          TEXT,
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS scheduled_jobs_next ON scheduled_jobs(next_run_at, enabled);
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_jobs_webhook ON scheduled_jobs(webhook_token)
+  WHERE webhook_token IS NOT NULL;

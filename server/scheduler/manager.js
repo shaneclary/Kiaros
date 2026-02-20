@@ -24,6 +24,16 @@ const { getDb } = require('../db/client')
 const { nextRunAfter, validate } = require('./cron')
 const { runJob } = require('./runner')
 
+// ── Idempotent schema migration ────────────────────────────────────────────
+// SQLite ALTER TABLE ADD COLUMN does not support UNIQUE — add column then index separately.
+try { getDb().exec('ALTER TABLE scheduled_jobs ADD COLUMN webhook_token TEXT') } catch {}
+try {
+  getDb().exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_sched_webhook ON scheduled_jobs(webhook_token) ' +
+    'WHERE webhook_token IS NOT NULL'
+  )
+} catch {}
+
 // ── In-memory scheduler key (NEVER log) ──────────────────────────────────
 let schedulerEncKey = null   // Buffer | null
 let tickInterval    = null
@@ -43,6 +53,7 @@ function rowToJob(r) {
     nextRunAt:         r.next_run_at || null,
     lastResultSummary: r.last_result_summary || null,
     lastError:         r.last_error || null,
+    hasWebhook:        !!r.webhook_token,
     createdAt:         r.created_at,
   }
 }
@@ -200,6 +211,56 @@ async function executeJob(id, requireUnlocked = true) {
   return result
 }
 
+// ── Webhook token management ───────────────────────────────────────────────
+
+/**
+ * Generate (or regenerate) a webhook token for a job.
+ * The token is a 64-char hex string (32 random bytes).
+ * Returns the plaintext token — store it; it is NOT stored in plaintext elsewhere.
+ * (DB stores it directly; the token IS the secret, treat like a password.)
+ *
+ * @param {string} jobId
+ * @returns {string} webhook token
+ */
+function generateWebhookToken(jobId) {
+  const job = getJob(jobId)
+  if (!job) throw new Error('Job not found')
+  const token = crypto.randomBytes(32).toString('hex')
+  getDb().prepare('UPDATE scheduled_jobs SET webhook_token = ? WHERE id = ?').run(token, jobId)
+  return token
+}
+
+/**
+ * Revoke a job's webhook token.
+ * @param {string} jobId
+ */
+function revokeWebhookToken(jobId) {
+  getDb().prepare('UPDATE scheduled_jobs SET webhook_token = NULL WHERE id = ?').run(jobId)
+}
+
+/**
+ * Look up a job by its webhook token using timing-safe comparison.
+ * Returns the job row or null if not found / token mismatch.
+ * @param {string} token  — 64-char hex from the request URL
+ * @returns {object|null}
+ */
+function getJobByWebhookToken(token) {
+  // Basic format check before hitting the DB
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null
+
+  const row = getDb().prepare(
+    'SELECT * FROM scheduled_jobs WHERE webhook_token IS NOT NULL AND enabled = 1'
+  ).all().find(r => {
+    try {
+      return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(r.webhook_token))
+    } catch {
+      return false
+    }
+  })
+
+  return row ? rowToJob(row) : null
+}
+
 // ── Scheduler lifecycle ───────────────────────────────────────────────────
 
 /**
@@ -281,6 +342,9 @@ module.exports = {
   updateJob,
   deleteJob,
   executeJob,
+  generateWebhookToken,
+  revokeWebhookToken,
+  getJobByWebhookToken,
   start,
   stop,
   unlockWithEncKey,

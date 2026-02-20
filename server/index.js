@@ -131,6 +131,7 @@ app.use('/api/memory', require('./routes/memory'))
 app.use('/api/audit', require('./routes/audit'))
 app.use('/api/settings', require('./routes/settings'))
 app.use('/api/scheduler', require('./routes/scheduler'))
+app.use('/api/search',    require('./routes/search'))
 
 // Serve built React app
 const publicDir = path.join(__dirname, 'public')
