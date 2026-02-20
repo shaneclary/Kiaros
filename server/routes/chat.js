@@ -9,6 +9,9 @@ const { buildMemoryContext } = require('../memory/working')
 const { getDecryptedKey, getActiveCredentialId, recordSpend, listCredentials } = require('../credentials/manager')
 const { streamChat } = require('../models/anthropic')
 const { streamChat: ollamaStreamChat } = require('../models/ollama')
+const { selectModel } = require('../orchestration/model-router')
+const { checkMonthlyBudget, estimateContextTokens, estimateCostMillicents } = require('../orchestration/token-budget')
+const { listTools } = require('../tools/registry')
 const config = require('../config')
 
 router.use(requireAuth)
@@ -121,7 +124,35 @@ Security and transparency are paramount. Always explain what you're doing before
 
       const creds = listCredentials()
       const activeCred = creds.find(c => c.id === activeCredId)
-      const model = activeCred?.model || 'claude-sonnet-4-20250514'
+      const configuredModel = activeCred?.model || 'claude-sonnet-4-20250514'
+
+      // Model routing: downgrade to Haiku when complexity doesn't warrant Sonnet/Opus
+      const hasTools = listTools().some(t => t.approved && t.enabled)
+      const routing = selectModel(message, configuredModel, hasTools)
+      const model = routing.model
+      if (routing.routed) {
+        send('model_selected', { model, reason: routing.reason, complexity: routing.complexity })
+      }
+
+      // Budget guard: warn if approaching or over the monthly ceiling
+      const estimatedInputTokens = estimateContextTokens(anthropicMessages) + estimateContextTokens([{ role: 'user', content: message }])
+      const estimatedCost = estimateCostMillicents(estimatedInputTokens)
+      const budget = checkMonthlyBudget(activeCredId, estimatedCost)
+      if (!budget.withinBudget) {
+        send('budget_warning', {
+          level: 'exceeded',
+          remainingCents: budget.remainingCents,
+          message: 'Monthly budget exceeded — request blocked.'
+        })
+        return res.end()
+      }
+      if (budget.warningThreshold) {
+        send('budget_warning', {
+          level: 'low',
+          remainingCents: budget.remainingCents,
+          message: `Budget low: $${(budget.remainingCents / 100).toFixed(2)} remaining this month.`
+        })
+      }
 
       try {
         const result = await streamChat({

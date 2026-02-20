@@ -2,6 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const { listTools: getRegistryTools, canInvokeTool } = require('../tools/registry')
 const { executeToolCall } = require('../orchestration/executor')
 const { buildPlan, summarizePlan } = require('../orchestration/planner')
+const { ensureContextFits } = require('../orchestration/token-budget')
 
 /**
  * Build Anthropic tool definitions from approved registry tools
@@ -57,6 +58,10 @@ async function streamChat({ messages, systemPrompt, apiKey, model, sessionId, on
   let totalOutputTokens = 0
 
   while (continueLoop) {
+    // Compress context if it has grown too large for the model's window
+    const { messages: fittedMessages } = ensureContextFits(allMessages)
+    allMessages = fittedMessages
+
     const streamParams = {
       model: model || 'claude-sonnet-4-20250514',
       max_tokens: 4096,
