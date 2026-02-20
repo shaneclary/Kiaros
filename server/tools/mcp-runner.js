@@ -1,7 +1,6 @@
 const { spawn } = require('child_process')
 const crypto = require('crypto')
 const { getDb } = require('../db/client')
-const { registerTool } = require('./registry')
 
 // Active MCP server processes: toolId -> MCPServerInstance
 const activeServers = new Map()
@@ -142,73 +141,6 @@ class MCPServer {
 }
 
 /**
- * Install a new MCP tool by command
- * @param {{ command: string, args?: string[], name?: string, requiredScopes?: string[] }} opts
- */
-async function installMcpTool(opts) {
-  const server = new MCPServer({
-    command: opts.command,
-    args: opts.args || [],
-    toolId: 'temp-discovery',
-    timeoutMs: 15000
-  })
-
-  let discoveredTools = []
-  try {
-    await server.start()
-    discoveredTools = await server.listTools()
-  } finally {
-    server.stop()
-  }
-
-  const installedIds = []
-
-  for (const mcpTool of discoveredTools) {
-    const toolId = `mcp-${mcpTool.name || crypto.randomUUID()}`
-    const requiredScopes = opts.requiredScopes || ['shell:exec']
-
-    const id = registerTool({
-      id: toolId,
-      name: opts.name || mcpTool.name || toolId,
-      description: mcpTool.description || '',
-      requiredScopes,
-      reversible: false,
-      sandboxed: true,
-      timeoutMs: 10000,
-      mcpConfig: {
-        command: opts.command,
-        args: opts.args || [],
-        method: `tools/call`,
-        toolName: mcpTool.name
-      }
-    })
-
-    installedIds.push(id)
-  }
-
-  if (installedIds.length === 0) {
-    // Register as a single tool if no tool discovery
-    const toolId = `mcp-${Date.now()}`
-    const id = registerTool({
-      id: toolId,
-      name: opts.name || opts.command,
-      description: opts.description || 'MCP tool',
-      requiredScopes: opts.requiredScopes || ['shell:exec'],
-      reversible: false,
-      sandboxed: true,
-      timeoutMs: 10000,
-      mcpConfig: {
-        command: opts.command,
-        args: opts.args || []
-      }
-    })
-    installedIds.push(id)
-  }
-
-  return installedIds
-}
-
-/**
  * Invoke a tool via its MCP server
  * Starts the server if not running
  */
@@ -250,4 +182,4 @@ function shutdownAll() {
 process.on('SIGTERM', shutdownAll)
 process.on('SIGINT', shutdownAll)
 
-module.exports = { installMcpTool, invokeMcpTool, shutdownAll }
+module.exports = { invokeMcpTool, shutdownAll }

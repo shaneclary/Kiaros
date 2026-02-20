@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const { listTools: getRegistryTools, canInvokeTool } = require('../tools/registry')
 const { executeToolCall } = require('../orchestration/executor')
+const { buildPlan, summarizePlan } = require('../orchestration/planner')
 
 /**
  * Build Anthropic tool definitions from approved registry tools
@@ -44,7 +45,7 @@ function buildSchemaForTool(toolId) {
  * Stream a chat completion with tool use support
  * @param {{ messages, systemPrompt, apiKey, model, sessionId, onToken, onToolCall, onToolResult }} opts
  */
-async function streamChat({ messages, systemPrompt, apiKey, model, sessionId, onToken, onToolCall, onToolResult }) {
+async function streamChat({ messages, systemPrompt, apiKey, model, sessionId, onToken, onToolCall, onToolResult, onPlan }) {
   // SECURITY: apiKey must never be logged
   const client = new Anthropic({ apiKey })
 
@@ -120,6 +121,17 @@ async function streamChat({ messages, systemPrompt, apiKey, model, sessionId, on
 
     // Handle tool calls if any
     if (toolUseBlocks.length > 0) {
+      // Build and emit plan before any tool runs
+      if (onPlan) {
+        try {
+          const rawSteps = toolUseBlocks.map(t => ({ toolId: t.name, input: t.input }))
+          const plan = buildPlan(rawSteps)
+          onPlan({ steps: plan, summary: summarizePlan(plan) })
+        } catch {
+          // Registry mismatch — skip plan emission, tools will still run
+        }
+      }
+
       const toolResults = []
 
       for (const toolUse of toolUseBlocks) {

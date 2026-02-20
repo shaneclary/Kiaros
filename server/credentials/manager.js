@@ -188,15 +188,6 @@ function getActiveCredentialId() {
   return cred?.id || null
 }
 
-/**
- * Get raw encrypted blob for a credential
- */
-function getEncryptedBlob(id) {
-  const db = getDb()
-  const cred = db.prepare('SELECT key_encrypted FROM credentials WHERE id = ?').get(id)
-  return cred?.key_encrypted || null
-}
-
 module.exports = {
   encryptKey,
   decryptKey,
@@ -209,5 +200,4 @@ module.exports = {
   updateCredential,
   recordSpend,
   getActiveCredentialId,
-  getEncryptedBlob
 }

@@ -134,6 +134,9 @@ Security and transparency are paramount. Always explain what you're doing before
             fullResponse += token
             send('token', { token })
           },
+          onPlan: (plan) => {
+            send('plan', plan)
+          },
           onToolCall: (toolCall) => {
             send('tool_call', toolCall)
           },
