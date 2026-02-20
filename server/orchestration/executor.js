@@ -18,6 +18,13 @@ function getMcpRunner() {
   return mcpRunner
 }
 
+// Generated skill loader — loaded lazily to avoid startup cost
+let generatorModule = null
+function loadGeneratedHandler(handlerPath) {
+  if (!generatorModule) generatorModule = require('../tools/generator')
+  return generatorModule.loadGeneratedHandler(handlerPath)
+}
+
 // Built-in tool handlers map
 const BUILTIN_HANDLERS = {
   'file-reader': readFile,
@@ -77,16 +84,26 @@ async function executeToolCall(step) {
   try {
     let output
 
-    // 6. Execute: builtin or MCP
+    // 6. Execute: builtin, generated skill, or MCP
     if (BUILTIN_HANDLERS[toolId]) {
       output = await withTimeout(
         () => BUILTIN_HANDLERS[toolId](validatedInput),
         tool.timeoutMs || 10000
       )
-    } else if (tool.mcpConfig) {
-      output = await getMcpRunner().invokeMcpTool(toolId, validatedInput, tool.timeoutMs)
     } else {
-      throw new Error(`No handler found for tool "${toolId}"`)
+      // Check for generated skill handler path
+      const row = require('../db/client').getDb()
+        .prepare('SELECT generated_handler_path FROM tool_registry WHERE id = ?').get(toolId)
+      const generatedPath = row?.generated_handler_path
+
+      if (generatedPath) {
+        const handler = loadGeneratedHandler(generatedPath)
+        output = await withTimeout(() => handler.execute(validatedInput), tool.timeoutMs || 15000)
+      } else if (tool.mcpConfig) {
+        output = await getMcpRunner().invokeMcpTool(toolId, validatedInput, tool.timeoutMs)
+      } else {
+        throw new Error(`No handler found for tool "${toolId}"`)
+      }
     }
 
     const sanitized = sanitizeOutput(output)

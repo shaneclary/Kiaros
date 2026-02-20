@@ -7,6 +7,8 @@ const {
 } = require('../tools/registry')
 const { discoverAndRegister } = require('../tools/mcp-discovery')
 const { resolveInterrupt, getPendingInterrupts } = require('../orchestration/interrupt-gate')
+const { generateToolProposal, installGeneratedTool } = require('../tools/generator')
+const { getDecryptedKey, getActiveCredentialId, listCredentials } = require('../credentials/manager')
 
 router.use(requireAuth)
 
@@ -105,6 +107,58 @@ router.post('/interrupts/:id/resolve', (req, res) => {
     }
     resolveInterrupt(req.params.id, approved)
     res.json({ ok: true })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// POST /api/tools/generate — Ask Claude to generate a skill from a description
+// Returns a proposal for human review; does NOT install anything.
+router.post('/generate', async (req, res) => {
+  try {
+    const { description, credentialId } = req.body
+    if (!description || typeof description !== 'string') {
+      return res.status(400).json({ error: 'description is required' })
+    }
+    if (description.length > 2000) {
+      return res.status(400).json({ error: 'description too long (max 2000 chars)' })
+    }
+
+    const activeCredId = credentialId || getActiveCredentialId()
+    if (!activeCredId) return res.status(400).json({ error: 'No API key configured' })
+
+    let apiKey
+    try {
+      apiKey = getDecryptedKey(activeCredId, req.encKey)
+    } catch {
+      return res.status(400).json({ error: 'Failed to retrieve API key' })
+    }
+
+    const creds = listCredentials()
+    const activeCred = creds.find(c => c.id === activeCredId)
+    const model = activeCred?.model || 'claude-sonnet-4-20250514'
+
+    try {
+      const proposal = await generateToolProposal(description, apiKey, model)
+      res.json({ ok: true, proposal })
+    } finally {
+      apiKey = null
+    }
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// POST /api/tools/install-generated — Install a reviewed and approved skill proposal
+router.post('/install-generated', (req, res) => {
+  try {
+    const { id, name, description, requiredScopes, reversible, code } = req.body
+    if (!id || !name || !code) {
+      return res.status(400).json({ error: 'id, name, and code are required' })
+    }
+
+    const { toolId, handlerPath } = installGeneratedTool({ id, name, description, requiredScopes, reversible, code })
+    res.json({ ok: true, toolId, handlerPath: handlerPath.split('/').pop(), tools: listTools() })
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
