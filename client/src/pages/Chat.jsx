@@ -14,6 +14,8 @@ export default function Chat({ token }) {
   const [streamingText, setStreamingText] = useState('')
   const [toolCalls, setToolCalls] = useState([]) // Current message's tool calls
   const [pendingInterrupts, setPendingInterrupts] = useState([])
+  const [reflecting, setReflecting] = useState(false)
+  const [reflectMsg, setReflectMsg] = useState('')
   const messagesEndRef = useRef(null)
   const pollRef = useRef(null)
 
@@ -126,6 +128,22 @@ export default function Chat({ token }) {
     }
   }
 
+  async function handleReflect() {
+    if (!currentSessionId || reflecting) return
+    setReflecting(true)
+    setReflectMsg('')
+    try {
+      const result = await api.post(`/memory/reflect/${currentSessionId}`, {}, token)
+      setReflectMsg(result.stored ? `✦ Reflected — ${result.stored} memories saved` : '✦ Nothing new to reflect')
+      setTimeout(() => setReflectMsg(''), 5000)
+    } catch (err) {
+      setReflectMsg(`Error: ${err.message}`)
+      setTimeout(() => setReflectMsg(''), 4000)
+    } finally {
+      setReflecting(false)
+    }
+  }
+
   return (
     <div className="flex h-full">
       {/* Interrupt prompts (modal) */}
@@ -172,6 +190,25 @@ export default function Chat({ token }) {
 
       {/* Chat area */}
       <div className="flex-1 flex flex-col">
+        {/* Session header bar */}
+        {currentSessionId && (
+          <div className="border-b border-gray-800 px-4 py-2 flex items-center gap-3 shrink-0">
+            <span className="text-xs text-gray-600 flex-1">Session active</span>
+            {reflectMsg && (
+              <span className="text-xs text-green-400">{reflectMsg}</span>
+            )}
+            {messages.length >= 2 && !streaming && (
+              <button
+                onClick={handleReflect}
+                disabled={reflecting}
+                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded transition-colors disabled:opacity-50"
+              >
+                {reflecting ? '…' : '✦ Reflect'}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-4">
           {messages.length === 0 && !streaming && (
             <div className="text-center text-gray-600 mt-16">
