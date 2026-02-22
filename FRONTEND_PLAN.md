@@ -279,50 +279,95 @@ All other API surface is already implemented.
 
 ---
 
-## 6. Android Path (after Phase 22)
+## 6. Mobile App (Android + iOS)
 
-### Prerequisites (all met after Phase 22)
-- [ ] All features have working, tested web UI
-- [ ] PWA installed and verified on Android Chrome
-- [ ] API design is stable (no breaking changes expected)
+### Confirmed Architecture
 
-### Architecture Decision
-**React Native + local Android services** — not a Node.js server port.
-
-The Kiaros server stays on Linux. The Android app is a remote client that:
-1. Connects to a Kiaros instance on the same LAN (or over Tailscale/VPN)
-2. Uses the same REST API and SSE streaming
-3. Adds Android-native push notifications (Firebase Cloud Messaging)
-4. Adds Android-native share sheet (share docs to Kiaros)
-
-### Work needed for Android access
-1. **Server: optional LAN bind** — `--host 0.0.0.0` flag + HTTPS (self-signed cert or Let's Encrypt via Caddy)
-2. **Server: FCM push bridge** — on scheduled job completion / interrupt gate, push to registered FCM tokens
-3. **React Native app** (`client-mobile/`) — new Expo project
-   - Screens mirror web pages 1:1 (Chat, Tools, Memory, Scheduler, Documents, Search, Audit, Settings)
-   - `expo-secure-store` for token (replaces localStorage)
-   - `@anthropic-ai/sdk` not needed — all API calls go to local Kiaros server
-   - SSE streaming via `EventSource` polyfill or `react-native-sse`
-   - Push notifications via `expo-notifications` + FCM
-   - Document import via `expo-document-picker` → POST to `/api/documents/ingest`
-   - Share extension: share any file to Kiaros
-
-### Android phases (future, after web complete)
 ```
-Android Phase A  Server LAN/TLS exposure + manual trigger endpoint
-Android Phase B  React Native project scaffold + auth flow
-Android Phase C  Chat screen + SSE streaming
-Android Phase D  Scheduler, Documents, Search screens
-Android Phase E  FCM push notifications
-Android Phase F  Share extension + document picker
-Android Phase G  Play Store submission (or F-Droid for open source)
+┌─────────────────────────────────────┐
+│  Linux Machine                      │
+│  Kiaros Server (Node.js)            │  ← unchanged, authoritative backend
+│  localhost:3333  (or LAN IP:3333)   │
+└──────────────┬──────────────────────┘
+               │  REST API + SSE  (LAN / Tailscale / VPN)
+       ┌───────┴────────┐
+       │                │
+  ┌────▼────┐     ┌─────▼────┐
+  │ Android │     │   iOS    │    ← same React Native / Expo codebase
+  │   app   │     │   app    │
+  └─────────┘     └──────────┘
 ```
+
+**The Linux server is never modified for mobile** (except optional LAN bind).
+The mobile apps are pure API clients — no local AI, no local DB, no Node.js.
+
+### Mobile project location
+`client-mobile/` — Expo managed workflow (compiles to Android APK and iOS IPA)
+
+### Key technology choices
+
+| Concern | Solution |
+|---------|---------|
+| Project framework | Expo SDK (managed workflow) |
+| Navigation | Expo Router (file-based, mirrors web routes) |
+| Auth token storage | `expo-secure-store` (replaces localStorage) |
+| API calls | Same fetch wrapper as web, pointed at server host |
+| SSE streaming | `react-native-sse` or `EventSource` polyfill |
+| Push notifications | `expo-notifications` + FCM (Android) / APNs (iOS) |
+| Document import | `expo-document-picker` → POST `/api/documents/ingest` |
+| Share extension | Expo share intent plugin |
+| Styling | NativeWind (Tailwind for React Native) — matches web design tokens |
+
+### Server additions for mobile access
+
+| Addition | What it enables |
+|----------|----------------|
+| Optional `--host 0.0.0.0` bind flag | Phone reaches server over LAN |
+| TLS termination (Caddy reverse proxy, documented) | HTTPS from phone — prevents credential interception on LAN |
+| `POST /api/scheduler/jobs/:id/run` | Already planned for Phase 16 |
+| `POST /api/push/register` — store FCM/APNs token | Push notifications to phone |
+| Push dispatch in scheduler runner + interrupt gate | "Job complete" and "Approve tool?" on phone |
+
+### Mobile phases
+
+```
+Mobile Phase A  Server: LAN bind flag + Caddy TLS docs + push register endpoint
+Mobile Phase B  Expo scaffold: auth screens (Setup / Login), server URL config
+Mobile Phase C  Chat screen + SSE streaming (core value, ship early)
+Mobile Phase D  Memory, Audit, Settings screens
+Mobile Phase E  Scheduler, Documents, Search screens
+Mobile Phase F  FCM push notifications (job results + interrupt approvals)
+Mobile Phase G  Document picker + share extension
+Mobile Phase H  Android internal testing track (Play Console)
+Mobile Phase I  iOS TestFlight
+Mobile Phase J  Production releases
+```
+
+### iOS note
+React Native / Expo compiles the same source to iOS with minimal platform deltas:
+- Replace FCM with APNs in `expo-notifications` config (one config key)
+- Replace `expo-document-picker` storage paths (handled by Expo automatically)
+- App Store requires a Mac + Xcode for final build (EAS Build service avoids this)
+
+### Screen inventory for mobile (mirrors web)
+
+| Screen | Route | Priority |
+|--------|-------|---------|
+| Login / Setup | `/` | A |
+| Chat | `/chat` | C |
+| Memory | `/memory` | D |
+| Audit | `/audit` | D |
+| Settings (incl. server URL) | `/settings` | B |
+| Scheduler | `/scheduler` | E |
+| Documents | `/documents` | E |
+| Search | `/search` | E |
+| Tools | `/tools` | D |
 
 ---
 
 ## 7. File Checklist
 
-### To create
+### Web frontend — to create
 - [ ] `client/src/pages/Scheduler.jsx`
 - [ ] `client/src/pages/Documents.jsx`
 - [ ] `client/src/pages/Search.jsx`
@@ -332,7 +377,7 @@ Android Phase G  Play Store submission (or F-Droid for open source)
 - [ ] `client/public/icons/icon-192.png`
 - [ ] `client/public/icons/icon-512.png`
 
-### To modify
+### Web frontend — to modify
 - [ ] `client/src/App.jsx` — add 3 new routes
 - [ ] `client/src/components/Layout.jsx` — add 3 nav items
 - [ ] `client/src/pages/Tools.jsx` — add Generate tab
@@ -341,12 +386,36 @@ Android Phase G  Play Store submission (or F-Droid for open source)
 - [ ] `client/src/main.jsx` — register service worker
 - [ ] `server/routes/scheduler.js` — add manual run endpoint
 
-### To build after all pages done
+### Web build
 ```bash
 cd client && npm run build
+# output → server/public/ (per vite.config.js outDir)
 ```
-Output goes to `server/public/` (per `client/vite.config.js`).
+
+### Mobile — to create (Mobile Phase B onwards)
+- [ ] `client-mobile/` — Expo project root
+- [ ] `client-mobile/app/_layout.tsx` — Expo Router root layout, auth guard
+- [ ] `client-mobile/app/index.tsx` — redirect to /chat or /login
+- [ ] `client-mobile/app/login.tsx`
+- [ ] `client-mobile/app/setup.tsx`
+- [ ] `client-mobile/app/(tabs)/_layout.tsx` — bottom tab bar
+- [ ] `client-mobile/app/(tabs)/chat.tsx`
+- [ ] `client-mobile/app/(tabs)/memory.tsx`
+- [ ] `client-mobile/app/(tabs)/scheduler.tsx`
+- [ ] `client-mobile/app/(tabs)/documents.tsx`
+- [ ] `client-mobile/app/(tabs)/search.tsx`
+- [ ] `client-mobile/app/(tabs)/audit.tsx`
+- [ ] `client-mobile/app/(tabs)/tools.tsx`
+- [ ] `client-mobile/app/(tabs)/settings.tsx`
+- [ ] `client-mobile/lib/api.ts` — fetch wrapper (reads server URL from SecureStore)
+- [ ] `client-mobile/lib/sse.ts` — SSE streaming client
+- [ ] `client-mobile/lib/time.ts` — relative time util
+- [ ] `client-mobile/lib/store.ts` — token + server URL persistence (SecureStore)
+
+### Server additions for mobile
+- [ ] `server/routes/push.js` — `POST /api/push/register`, `DELETE /api/push/unregister`
+- [ ] Optional: `--host` CLI flag in `server/index.js` for LAN bind
 
 ---
 
-*Reference this file at the start of each frontend phase. Update checkboxes as work completes.*
+*Reference this file at the start of each phase. Update checkboxes as work completes.*
