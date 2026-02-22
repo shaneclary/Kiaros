@@ -2,11 +2,12 @@ import React from 'react'
 import { NavLink } from 'react-router-dom'
 
 const navItems = [
-  { path: '/chat', label: 'Chat', icon: '💬' },
-  { path: '/tools', label: 'Tools', icon: '🔧' },
-  { path: '/memory', label: 'Memory', icon: '🧠' },
-  { path: '/audit', label: 'Audit', icon: '📋' },
-  { path: '/settings', label: 'Settings', icon: '⚙️' },
+  { path: '/chat',      label: 'Chat',      icon: '💬' },
+  { path: '/tools',     label: 'Tools',     icon: '🔧' },
+  { path: '/memory',    label: 'Memory',    icon: '🧠' },
+  { path: '/scheduler', label: 'Scheduler', icon: '📅' },
+  { path: '/audit',     label: 'Audit',     icon: '📋' },
+  { path: '/settings',  label: 'Settings',  icon: '⚙️' },
 ]
 
 export default function Layout({ children, onLogout }) {
