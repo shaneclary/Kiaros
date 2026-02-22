@@ -7,6 +7,8 @@ import Chat from './pages/Chat'
 import Tools from './pages/Tools'
 import Memory from './pages/Memory'
 import Scheduler from './pages/Scheduler'
+import Documents from './pages/Documents'
+import Search from './pages/Search'
 import Audit from './pages/Audit'
 import Settings from './pages/Settings'
 import Layout from './components/Layout'
@@ -82,6 +84,8 @@ export default function App() {
           <Route path="/tools" element={<Tools token={token} />} />
           <Route path="/memory"    element={<Memory    token={token} />} />
           <Route path="/scheduler" element={<Scheduler token={token} />} />
+          <Route path="/documents" element={<Documents token={token} />} />
+          <Route path="/search"    element={<Search    token={token} />} />
           <Route path="/audit"     element={<Audit     token={token} />} />
           <Route path="/settings" element={<Settings token={token} />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
