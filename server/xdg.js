@@ -37,10 +37,11 @@ const xdg = {
   dbFile:       path.join(dataHome,    APP, 'kiaros.db'),
   generatedDir: path.join(dataHome,    APP, 'generated'),
   notesDir:     path.join(dataHome,    APP, 'notes'),
+  docsDir:      path.join(dataHome,    APP, 'documents'),
 }
 
 // Ensure all directories exist (mkdirSync with recursive is idempotent)
-for (const dir of [xdg.configDir, xdg.dataDir, xdg.cacheDir, xdg.runtimeDir, xdg.generatedDir, xdg.notesDir]) {
+for (const dir of [xdg.configDir, xdg.dataDir, xdg.cacheDir, xdg.runtimeDir, xdg.generatedDir, xdg.notesDir, xdg.docsDir]) {
   fs.mkdirSync(dir, { recursive: true })
 }
 

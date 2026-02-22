@@ -32,10 +32,14 @@ function ensureMetaTable() {
       content        TEXT NOT NULL,
       source         TEXT NOT NULL DEFAULT 'conversation',
       session_id     TEXT,
+      doc_id         TEXT,
       embedding_json TEXT,
       created_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `)
+  // Idempotent migration for doc_id column (existing DBs without it)
+  try { db.exec('ALTER TABLE memory_archive_meta ADD COLUMN doc_id TEXT') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_archive_doc_id ON memory_archive_meta(doc_id) WHERE doc_id IS NOT NULL') } catch {}
 }
 
 // ── Try loading sqlite-vec ────────────────────────────────────────────────
@@ -122,10 +126,10 @@ function cosineSimilarity(a, b) {
 /**
  * Store a text chunk in the archive (async).
  *
- * @param {{ id?, content, source?, sessionId? }} opts
+ * @param {{ id?, content, source?, sessionId?, docId? }} opts
  * @returns {Promise<string>} chunkId
  */
-async function archiveChunk({ id, content, source, sessionId }) {
+async function archiveChunk({ id, content, source, sessionId, docId }) {
   const db = getDb()
   const chunkId = id || crypto.randomUUID()
   const embedding = await generateEmbedding(content)
@@ -133,9 +137,9 @@ async function archiveChunk({ id, content, source, sessionId }) {
   if (embedding) {
     db.prepare(`
       INSERT OR REPLACE INTO memory_archive_meta
-        (id, content, source, session_id, embedding_json)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(chunkId, content, source || 'conversation', sessionId || null, JSON.stringify(embedding))
+        (id, content, source, session_id, doc_id, embedding_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(chunkId, content, source || 'conversation', sessionId || null, docId || null, JSON.stringify(embedding))
 
     if (vectorTableEnabled) {
       const floatBuf = Buffer.alloc(embedding.length * 4)
@@ -232,6 +236,23 @@ function deleteArchiveEntry(id) {
   db.prepare('DELETE FROM working_memory WHERE key = ?').run(`archive_${id}`)
 }
 
+/**
+ * Remove all archive chunks belonging to a document.
+ * Called when a document is deleted from the index.
+ */
+function removeDocumentChunks(docId) {
+  const db = getDb()
+  const rows = db.prepare('SELECT id FROM memory_archive_meta WHERE doc_id = ?').all(docId)
+  for (const row of rows) {
+    if (vectorTableEnabled) {
+      db.prepare('DELETE FROM memory_archive_vec WHERE id = ?').run(row.id)
+    }
+    db.prepare('DELETE FROM working_memory WHERE key = ?').run(`archive_${row.id}`)
+  }
+  db.prepare('DELETE FROM memory_archive_meta WHERE doc_id = ?').run(docId)
+  return rows.length
+}
+
 function isSemanticSearchAvailable() { return ollamaEmbeddingAvailable || vectorTableEnabled }
 function isVectorSearchAvailable()   { return isSemanticSearchAvailable() }
 
@@ -239,6 +260,7 @@ module.exports = {
   archiveChunk,
   searchArchive,
   deleteArchiveEntry,
+  removeDocumentChunks,
   generateEmbedding,
   isSemanticSearchAvailable,
   isVectorSearchAvailable,

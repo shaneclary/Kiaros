@@ -95,3 +95,17 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
 CREATE INDEX IF NOT EXISTS scheduled_jobs_next ON scheduled_jobs(next_run_at, enabled);
 CREATE UNIQUE INDEX IF NOT EXISTS scheduled_jobs_webhook ON scheduled_jobs(webhook_token)
   WHERE webhook_token IS NOT NULL;
+
+-- Document index: tracks files ingested from docsDir into the semantic archive
+CREATE TABLE IF NOT EXISTS document_index (
+  id          TEXT PRIMARY KEY,
+  file_path   TEXT NOT NULL UNIQUE,   -- absolute path
+  filename    TEXT NOT NULL,
+  mime_type   TEXT,
+  size_bytes  INTEGER,
+  chunk_count INTEGER DEFAULT 0,
+  mtime       TEXT,                   -- ISO8601 mtime at last index
+  indexed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  error       TEXT                    -- parse error from last attempt, if any
+);
+CREATE INDEX IF NOT EXISTS idx_document_index_path ON document_index(file_path);

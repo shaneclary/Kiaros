@@ -3,6 +3,7 @@ const path = require('path')
 const { getDb } = require('./db/client')
 const { registerTool } = require('./tools/registry')
 const scheduler = require('./scheduler/manager')
+const watcher   = require('./ingestion/watcher')
 
 const PORT = process.env.PORT || 3333
 
@@ -132,6 +133,7 @@ app.use('/api/audit', require('./routes/audit'))
 app.use('/api/settings', require('./routes/settings'))
 app.use('/api/scheduler', require('./routes/scheduler'))
 app.use('/api/search',    require('./routes/search'))
+app.use('/api/documents', require('./routes/documents'))
 
 // Serve built React app
 const publicDir = path.join(__dirname, 'public')
@@ -162,6 +164,7 @@ app.listen(PORT, '127.0.0.1', () => {
   console.log('All traffic is local. External calls only to api.anthropic.com.')
   console.log('Press Ctrl+C to stop.\n')
   scheduler.start()
+  watcher.start()
 })
 
 module.exports = app

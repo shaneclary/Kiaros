@@ -29,7 +29,7 @@ const xdg        = require('../xdg')
 
 router.use(requireAuth)
 
-const ALL_SOURCES   = ['archive', 'memory', 'sessions', 'notes', 'jobs']
+const ALL_SOURCES   = ['archive', 'memory', 'sessions', 'notes', 'jobs', 'documents']
 const DEFAULT_LIMIT = 10
 const MAX_LIMIT     = 50
 
@@ -77,8 +77,9 @@ async function runSearch(source, q, limit) {
     case 'memory':   return searchMemory(q, limit)
     case 'sessions': return searchSessions(q, limit)
     case 'notes':    return searchNotes(q, limit)
-    case 'jobs':     return searchJobs(q, limit)
-    default:         return []
+    case 'jobs':      return searchJobs(q, limit)
+    case 'documents': return searchDocuments(q, limit)
+    default:          return []
   }
 }
 
@@ -178,6 +179,39 @@ function searchJobs(q, limit) {
     score:   0.35,
     meta:    { jobName: r.name, lastRunAt: r.last_run_at }
   }))
+}
+
+function searchDocuments(q, limit) {
+  // LIKE search over indexed document chunks, joined to document_index for metadata
+  const rows = getDb().prepare(`
+    SELECT m.id, m.content, m.doc_id, m.created_at,
+           d.filename, d.file_path, d.mime_type
+    FROM memory_archive_meta m
+    LEFT JOIN document_index d ON d.id = m.doc_id
+    WHERE m.source = 'document'
+      AND m.doc_id IS NOT NULL
+      AND m.content LIKE ?
+    ORDER BY m.created_at DESC LIMIT ?
+  `).all(`%${q}%`, limit)
+
+  return rows.map(r => {
+    const idx  = (r.content || '').toLowerCase().indexOf(q.toLowerCase())
+    const snip = idx >= 0
+      ? r.content.substring(Math.max(0, idx - 80), idx + 300).trim()
+      : r.content.substring(0, 280)
+    return {
+      id:      r.id,
+      type:    'document_chunk',
+      content: snip,
+      score:   0.55,
+      meta:    {
+        docId:    r.doc_id,
+        filename: r.filename  || '(unknown)',
+        filePath: r.file_path || null,
+        mimeType: r.mime_type || null,
+      }
+    }
+  })
 }
 
 module.exports = router
