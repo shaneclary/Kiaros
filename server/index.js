@@ -134,6 +134,7 @@ app.use('/api/settings', require('./routes/settings'))
 app.use('/api/scheduler', require('./routes/scheduler'))
 app.use('/api/search',    require('./routes/search'))
 app.use('/api/documents', require('./routes/documents'))
+app.use('/api/push',      require('./routes/push'))
 
 // Serve built React app
 const publicDir = path.join(__dirname, 'public')
@@ -159,9 +160,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' })
 })
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`\nKiaros 2.0 running at http://localhost:${PORT}`)
-  console.log('All traffic is local. External calls only to api.anthropic.com.')
+// Allow LAN binding via --host flag (needed for mobile app access)
+// Usage: node index.js --host
+// WARNING: only use on trusted networks; protect with Tailscale or VPN
+const HOST = process.argv.includes('--host') ? '0.0.0.0' : '127.0.0.1'
+
+app.listen(PORT, HOST, () => {
+  if (HOST === '0.0.0.0') {
+    console.log(`\nKiaros 2.0 running at http://0.0.0.0:${PORT} (LAN reachable)`)
+    console.log('⚠  Listening on all interfaces. Use Tailscale or a firewall to restrict access.')
+  } else {
+    console.log(`\nKiaros 2.0 running at http://localhost:${PORT}`)
+    console.log('All traffic is local. External calls only to api.anthropic.com.')
+  }
   console.log('Press Ctrl+C to stop.\n')
   scheduler.start()
   watcher.start()

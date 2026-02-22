@@ -109,3 +109,13 @@ CREATE TABLE IF NOT EXISTS document_index (
   error       TEXT                    -- parse error from last attempt, if any
 );
 CREATE INDEX IF NOT EXISTS idx_document_index_path ON document_index(file_path);
+
+-- Push notification tokens: registered by mobile apps
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id          TEXT PRIMARY KEY,
+  platform    TEXT NOT NULL CHECK(platform IN ('android', 'ios')),
+  token       TEXT NOT NULL UNIQUE,
+  device_name TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS push_tokens_platform ON push_tokens(platform);
