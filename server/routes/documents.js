@@ -112,4 +112,42 @@ router.delete('/:id', (req, res) => {
   }
 })
 
+// ── POST /api/documents/upload ─────────────────────────────────────────────
+// Mobile upload: body { filename, content_base64, mime_type? }
+// Writes file into docsDir and immediately ingests it.
+router.post('/upload', async (req, res) => {
+  const { filename, content_base64, mime_type } = req.body
+  if (!filename || typeof filename !== 'string') {
+    return res.status(400).json({ error: 'filename is required' })
+  }
+  if (!content_base64 || typeof content_base64 !== 'string') {
+    return res.status(400).json({ error: 'content_base64 is required' })
+  }
+
+  // Sanitize filename — strip all path separators
+  const safe = path.basename(filename.replace(/[/\\]/g, '_'))
+  if (!safe || safe === '.' || safe === '..') {
+    return res.status(400).json({ error: 'Invalid filename' })
+  }
+
+  const destPath = path.join(xdg.docsDir, safe)
+
+  try {
+    // Decode and write — 25 MB limit to prevent memory exhaustion
+    const buf = Buffer.from(content_base64, 'base64')
+    if (buf.length > 25 * 1024 * 1024) {
+      return res.status(413).json({ error: 'File too large (25 MB max)' })
+    }
+    fs.mkdirSync(xdg.docsDir, { recursive: true })
+    fs.writeFileSync(destPath, buf)
+
+    const result = await ingestFile(destPath)
+    res.json({ ok: true, ...result, filename: safe })
+  } catch (err) {
+    // Clean up on failure
+    try { fs.unlinkSync(destPath) } catch {}
+    res.status(422).json({ error: err.message })
+  }
+})
+
 module.exports = router

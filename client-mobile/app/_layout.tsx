@@ -1,10 +1,20 @@
 import { useEffect, useState, createContext, useContext } from 'react'
 import { Stack, router } from 'expo-router'
-import { View, ActivityIndicator } from 'react-native'
+import { View, ActivityIndicator, Platform } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
+import * as Notifications from 'expo-notifications'
 import { getToken, getServerUrl, clearAll } from '../lib/store'
 import { api } from '../lib/api'
+
+// Configure how notifications are shown when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  })
+})
 
 SplashScreen.preventAutoHideAsync()
 
@@ -26,6 +36,37 @@ const AuthContext = createContext<AuthCtx>({
 
 export function useAuth(): AuthCtx {
   return useContext(AuthContext)
+}
+
+// --- Push notification registration ---
+
+async function registerPushToken(authToken: string): Promise<void> {
+  // Physical device required (emulators don't have push)
+  const { status: existing } = await Notifications.getPermissionsAsync()
+  let finalStatus = existing
+
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync()
+    finalStatus = status
+  }
+  if (finalStatus !== 'granted') return
+
+  // Android requires a notification channel
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('kiaros', {
+      name: 'Kiaros',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#3b82f6',
+    })
+  }
+
+  const pushToken = await Notifications.getExpoPushTokenAsync()
+  await api.post('/push/register', {
+    platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    token: pushToken.data,
+    deviceName: Platform.OS
+  }, authToken)
 }
 
 // --- Root layout ---
@@ -73,6 +114,8 @@ export default function RootLayout() {
       router.replace(firstRun ? '/setup' : '/login')
     } else {
       router.replace('/(tabs)/chat')
+      // Register for push notifications after authentication
+      registerPushToken(token).catch(() => {})
     }
   }, [ready, token, serverUrl, firstRun])
 

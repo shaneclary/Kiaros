@@ -13,11 +13,52 @@
  * The plaintext API key exists only for the duration of the HTTP call.
  */
 
+const https = require('https')
 const Anthropic = require('@anthropic-ai/sdk')
 const { getDecryptedKey, getActiveCredentialId, listCredentials, recordSpend } = require('../credentials/manager')
 const { buildMemoryContext } = require('../memory/working')
 const { archiveChunk } = require('../memory/archive')
 const { sendNotification } = require('../orchestration/notify')
+const { getDb } = require('../db/client')
+
+/**
+ * Send Expo push notifications to all registered mobile devices.
+ * Fire-and-forget — never throws, never blocks job completion.
+ * @param {string} title
+ * @param {string} body
+ */
+function dispatchPushNotifications(title, body) {
+  let tokens
+  try {
+    tokens = getDb().prepare('SELECT token FROM push_tokens').all()
+  } catch { return }
+  if (!tokens || tokens.length === 0) return
+
+  const messages = tokens.map(({ token }) => ({
+    to: token,
+    title,
+    body,
+    sound: 'default',
+    priority: 'normal'
+  }))
+
+  const payload = JSON.stringify({ messages })
+  const options = {
+    hostname: 'exp.host',
+    path: '/--/api/v2/push/send',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate'
+    }
+  }
+  const req = https.request(options)
+  req.on('error', () => {}) // Non-fatal; desktop notification already sent
+  req.write(payload)
+  req.end()
+}
 
 const SCHEDULER_SYSTEM = `You are Kiaros, a personal AI executive assistant running a scheduled task.
 Complete the task concisely and accurately. The user will read your response as a notification summary.
@@ -102,6 +143,9 @@ async function runJob(job, encKey) {
     urgency: 'low',
     timeoutMs: 10000
   }).catch(() => {})
+
+  // Push notification to registered mobile devices (fire-and-forget)
+  dispatchPushNotifications(`Kiaros: ${job.name}`, summary)
 
   return { summary, inputTokens, outputTokens }
 }
