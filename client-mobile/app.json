@@ -22,8 +22,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#030712"
       },
-      "package": "com.kiaros.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.kiaros.app"
     },
     "plugins": [
       "expo-router",

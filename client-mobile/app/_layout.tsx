@@ -4,6 +4,7 @@ import { View, ActivityIndicator, Platform } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Notifications from 'expo-notifications'
+import Constants from 'expo-constants'
 import { getToken, getServerUrl, clearAll } from '../lib/store'
 import { api } from '../lib/api'
 
@@ -61,7 +62,8 @@ async function registerPushToken(authToken: string): Promise<void> {
     })
   }
 
-  const pushToken = await Notifications.getExpoPushTokenAsync()
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined
+  const pushToken = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {})
   await api.post('/push/register', {
     platform: Platform.OS === 'ios' ? 'ios' : 'android',
     token: pushToken.data,
