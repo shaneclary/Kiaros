@@ -1,0 +1,23 @@
+{
+  "name": "kiaros",
+  "version": "2.0.0",
+  "description": "Self-hosted, security-first AI orchestration engine with proactive agent capabilities",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "concurrently \"node server/index.js\" \"cd client && npx vite --port 5173\"",
+    "build": "cd client && npx vite build",
+    "postinstall": "cd client && npm install"
+  },
+  "keywords": ["ai", "orchestration", "claude", "mcp", "agent", "self-hosted"],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^11.7.0",
+    "concurrently": "^9.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "uuid": "^10.0.0"
+  }
+}
