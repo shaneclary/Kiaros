@@ -7,8 +7,8 @@ router.use(requireAuth)
 
 router.get('/', (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50
-    const offset = parseInt(req.query.offset) || 0
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 500)
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0)
     res.json(audit.getAuditLog(limit, offset))
   } catch (err) {
     res.status(500).json({ error: err.message })

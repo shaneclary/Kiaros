@@ -4,19 +4,31 @@ import api from '../utils/api'
 export default function Settings() {
   const [settings, setSettings] = useState(null)
   const [credentials, setCredentials] = useState([])
+  const [interrupts, setInterrupts] = useState([])
   const [newCred, setNewCred] = useState({ label: '', apiKey: '', model: 'claude-sonnet-4-20250514' })
   const [loading, setLoading] = useState(true)
   const [testResult, setTestResult] = useState(null)
 
   useEffect(() => {
     loadData()
+    // Poll for interrupts every 3 seconds
+    const interval = setInterval(loadInterrupts, 3000)
+    return () => clearInterval(interval)
   }, [])
+
+  async function loadInterrupts() {
+    try {
+      const data = await api.getInterrupts()
+      setInterrupts(data)
+    } catch { /* ignore */ }
+  }
 
   async function loadData() {
     try {
-      const [s, c] = await Promise.all([api.getSettings(), api.listCredentials()])
+      const [s, c, i] = await Promise.all([api.getSettings(), api.listCredentials(), api.getInterrupts()])
       setSettings(s)
       setCredentials(c)
+      setInterrupts(i)
     } catch (err) {
       console.error(err)
     } finally {
@@ -160,6 +172,50 @@ export default function Settings() {
           ))}
         </div>
       </section>
+
+      {/* Pending Interrupts */}
+      {interrupts.length > 0 && (
+        <section>
+          <h3 className="font-semibold mb-3 text-yellow-400">Pending Interrupts ({interrupts.length})</h3>
+          <p className="text-sm text-gray-500 mb-3">Actions awaiting your approval.</p>
+          <div className="space-y-2">
+            {interrupts.map(interrupt => (
+              <div key={interrupt.id} className="card border-yellow-800 bg-yellow-900/10">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="font-medium text-sm">{interrupt.action?.toolName || 'Unknown Tool'}</span>
+                    <span className={`ml-2 text-xs ${
+                      interrupt.action?.riskLevel === 'high' ? 'text-red-400' :
+                      interrupt.action?.riskLevel === 'medium' ? 'text-yellow-400' : 'text-green-400'
+                    }`}>
+                      {interrupt.action?.riskLevel} risk
+                    </span>
+                    {interrupt.action?.input && (
+                      <pre className="text-xs text-gray-500 mt-1 max-h-16 overflow-hidden">
+                        {JSON.stringify(interrupt.action.input, null, 2).substring(0, 200)}
+                      </pre>
+                    )}
+                  </div>
+                  <div className="flex gap-2 ml-4">
+                    <button
+                      onClick={async () => { await api.resolveInterrupt(interrupt.id, true); loadInterrupts() }}
+                      className="btn-primary text-xs px-3 py-1"
+                    >
+                      Allow
+                    </button>
+                    <button
+                      onClick={async () => { await api.resolveInterrupt(interrupt.id, false); loadInterrupts() }}
+                      className="btn-danger text-xs px-3 py-1"
+                    >
+                      Block
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Tick Engine Config */}
       <section>

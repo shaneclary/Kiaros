@@ -132,6 +132,21 @@ async function tick() {
     Date.now() - start
   )
 
+  // Execute the action if decided to act
+  if (evaluation.decision === 'act' && evaluation.action) {
+    try {
+      const result = await executeAction(evaluation.action)
+      evaluation.executionResult = result
+
+      // Update tick log with execution result
+      db.prepare('UPDATE tick_log SET action_taken = ? WHERE tick_number = ?')
+        .run(JSON.stringify({ ...evaluation.action, result }), tickNumber)
+    } catch (err) {
+      evaluation.executionError = err.message
+      console.error('[tick-engine] Action execution failed:', err.message)
+    }
+  }
+
   // Notify listeners
   notifyListeners({
     tickNumber,
@@ -139,8 +154,62 @@ async function tick() {
     timestamp: Date.now()
   })
 
-  // If acting, the caller (orchestrator) handles execution
   return evaluation
+}
+
+/**
+ * Execute an action decided by the evaluation loop
+ */
+async function executeAction(action) {
+  switch (action.type) {
+    case 'resume_task': {
+      const task = tasks.get(action.taskId)
+      if (!task || task.status !== 'in_progress') return { skipped: true, reason: 'Task no longer in progress' }
+      const result = tasks.advanceStep(action.taskId, 'auto-advanced by tick engine')
+      return { type: 'task_advanced', taskId: action.taskId, ...result }
+    }
+
+    case 'start_task': {
+      const task = tasks.get(action.taskId)
+      if (!task || task.status !== 'pending') return { skipped: true, reason: 'Task no longer pending' }
+      tasks.updateStatus(action.taskId, 'in_progress')
+      return { type: 'task_started', taskId: action.taskId }
+    }
+
+    case 'consolidate_memory': {
+      const memories = working.getAll()
+      if (memories.length <= 10) return { skipped: true, reason: 'Not enough memories to consolidate' }
+
+      // Group related memories and create summary entries
+      const sources = {}
+      for (const m of memories) {
+        const src = m.source || 'unknown'
+        if (!sources[src]) sources[src] = []
+        sources[src].push(m)
+      }
+
+      const consolidated = Object.entries(sources)
+        .filter(([, items]) => items.length > 3)
+        .map(([source, items]) => ({
+          source,
+          count: items.length,
+          keys: items.map(i => i.key)
+        }))
+
+      if (consolidated.length > 0) {
+        working.set(
+          '_memory_stats',
+          JSON.stringify({ totalKeys: memories.length, bySource: consolidated, consolidatedAt: new Date().toISOString() }),
+          'system'
+        )
+      }
+
+      return { type: 'memory_consolidated', totalKeys: memories.length, groups: consolidated.length }
+    }
+
+    default:
+      return { skipped: true, reason: `Unknown action type: ${action.type}` }
+  }
 }
 
 function start() {

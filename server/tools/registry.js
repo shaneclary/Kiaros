@@ -62,6 +62,29 @@ const BUILTIN_TOOLS = {
     async execute(input) {
       const { execSync } = require('child_process')
       if (!input.command) throw new Error('Missing command')
+
+      // Dangerous command detection
+      const DANGEROUS_PATTERNS = [
+        /\brm\s+(-[rfRF]+\s+)?[\/~]/,    // rm -rf / or ~
+        /\bmkfs\b/,                         // format filesystem
+        /\bdd\s+.*of=\/dev/,               // dd to device
+        />\s*\/dev\/sd/,                    // write to disk device
+        /\bshutdown\b/,                     // shutdown system
+        /\breboot\b/,                       // reboot system
+        /\bkill\s+-9\s+-1\b/,             // kill all processes
+        /:(){ :|:& };:/,                    // fork bomb
+        /\bchmod\s+-R\s+777\s+\//,        // chmod 777 /
+        /\bcurl\b.*\|\s*(ba)?sh\b/,       // pipe curl to shell
+        /\bwget\b.*\|\s*(ba)?sh\b/,       // pipe wget to shell
+      ]
+
+      const cmd = input.command.toLowerCase()
+      for (const pattern of DANGEROUS_PATTERNS) {
+        if (pattern.test(cmd)) {
+          throw new Error(`Blocked: potentially destructive command detected. Pattern: ${pattern.source}`)
+        }
+      }
+
       const output = execSync(input.command, {
         timeout: 25000,
         maxBuffer: 1024 * 1024,

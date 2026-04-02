@@ -40,8 +40,22 @@ router.get('/log', (req, res) => {
 })
 
 router.put('/config', (req, res) => {
+  const allowed = ['enabled', 'intervalMs', 'maxAutonomousRisk', 'idleThresholdMs']
   const current = config.get('tick') || {}
-  config.set('tick', { ...current, ...req.body })
+  const updates = {}
+  for (const key of Object.keys(req.body)) {
+    if (allowed.includes(key)) updates[key] = req.body[key]
+  }
+  if (updates.intervalMs !== undefined) {
+    updates.intervalMs = Math.min(Math.max(parseInt(updates.intervalMs) || 60000, 10000), 3600000)
+  }
+  if (updates.idleThresholdMs !== undefined) {
+    updates.idleThresholdMs = Math.min(Math.max(parseInt(updates.idleThresholdMs) || 300000, 30000), 7200000)
+  }
+  if (updates.maxAutonomousRisk && !['low', 'medium', 'high'].includes(updates.maxAutonomousRisk)) {
+    return res.status(400).json({ error: 'Invalid risk level. Must be: low, medium, high' })
+  }
+  config.set('tick', { ...current, ...updates })
   res.json({ success: true, tick: config.get('tick') })
 })
 
@@ -49,6 +63,12 @@ router.put('/config', (req, res) => {
 
 router.get('/tasks', (req, res) => {
   const status = req.query.status
+  if (status) {
+    const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'paused']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` })
+    }
+  }
   res.json(status ? tasks.getByStatus(status) : tasks.listAll())
 })
 
@@ -56,7 +76,8 @@ router.post('/tasks', (req, res) => {
   try {
     const { title, description, steps, priority } = req.body
     if (!title) return res.status(400).json({ error: 'Missing title' })
-    const id = tasks.create(title, description, steps || [], null, priority || 0)
+    const clampedPriority = Math.min(Math.max(parseInt(priority) || 0, 0), 100)
+    const id = tasks.create(title, description, steps || [], null, clampedPriority)
     res.json({ success: true, id })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -72,6 +93,10 @@ router.get('/tasks/:id', (req, res) => {
 router.put('/tasks/:id/status', (req, res) => {
   try {
     const { status } = req.body
+    const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'paused']
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` })
+    }
     tasks.updateStatus(req.params.id, status)
     res.json({ success: true })
   } catch (err) {

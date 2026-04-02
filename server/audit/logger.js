@@ -55,6 +55,7 @@ function undoAction(id) {
   const db = getDb()
   const entry = db.prepare('SELECT * FROM audit_log WHERE id = ? AND reversible = 1 AND reversed = 0').get(id)
   if (!entry) throw new Error('Action not found or not reversible')
+  if (!entry.undo_data) throw new Error('No undo data available for this action')
   db.prepare('UPDATE audit_log SET reversed = 1 WHERE id = ?').run(id)
   return JSON.parse(entry.undo_data)
 }

@@ -50,8 +50,8 @@ router.post('/:id/test', async (req, res) => {
   try {
     const { passphrase } = req.body
     if (!passphrase) return res.status(400).json({ error: 'Passphrase required' })
-    const cred = creds.getActiveCredential(passphrase)
-    if (!cred) return res.status(404).json({ error: 'No active credential' })
+    const cred = creds.getCredentialById(req.params.id, passphrase)
+    if (!cred) return res.status(404).json({ error: 'Credential not found' })
     const result = await anthropic.testConnection(cred.apiKey)
     res.json(result)
   } catch (err) {

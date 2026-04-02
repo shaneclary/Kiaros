@@ -23,7 +23,11 @@ router.post('/', async (req, res) => {
 
     // Get or create session
     let sid = sessionId
-    if (!sid) {
+    if (sid) {
+      // Validate session exists
+      const existing = session.getSession(sid)
+      if (!existing) return res.status(400).json({ error: 'Invalid session ID' })
+    } else {
       sid = session.createSession(message.substring(0, 50))
     }
 
@@ -139,13 +143,19 @@ router.post('/', async (req, res) => {
         continueLoop = false
       }
 
-      // Track spend
+      // Track spend with model-specific pricing
       if (result.usage) {
+        const MODEL_PRICING = {
+          'claude-sonnet-4-20250514':  { input: 0.003, output: 0.015 },
+          'claude-opus-4-20250514':    { input: 0.015, output: 0.075 },
+          'claude-haiku-4-5-20251001': { input: 0.0008, output: 0.004 },
+        }
+        const pricing = MODEL_PRICING[cred.model] || MODEL_PRICING['claude-sonnet-4-20250514']
         const costMillicents = Math.round(
-          (result.usage.inputTokens * 0.003 + result.usage.outputTokens * 0.015) * 100
+          (result.usage.inputTokens * pricing.input + result.usage.outputTokens * pricing.output) * 100
         )
         creds.trackSpend(cred.id, costMillicents)
-        sendEvent('usage', result.usage)
+        sendEvent('usage', { ...result.usage, costMillicents })
       }
     }
 

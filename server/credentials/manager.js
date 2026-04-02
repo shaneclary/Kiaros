@@ -66,6 +66,16 @@ function getActiveCredential(passphrase) {
   }
 }
 
+function getCredentialById(id, passphrase) {
+  const db = getDb()
+  const cred = db.prepare('SELECT * FROM credentials WHERE id = ?').get(id)
+  if (!cred) return null
+  return {
+    ...cred,
+    apiKey: decryptKey(cred.key_encrypted, passphrase)
+  }
+}
+
 function deleteCredential(id) {
   const db = getDb()
   db.prepare('DELETE FROM credentials WHERE id = ?').run(id)
@@ -92,6 +102,6 @@ function trackSpend(id, millicents) {
 
 module.exports = {
   encryptKey, decryptKey, maskKey,
-  addCredential, listCredentials, getActiveCredential,
+  addCredential, listCredentials, getActiveCredential, getCredentialById,
   deleteCredential, updateCredential, trackSpend
 }
